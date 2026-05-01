@@ -1,0 +1,49 @@
+name: Feature request
+description: Suggest an improvement for EvalSmith.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. Please avoid sharing private business data, customer data, internal URLs, or secrets.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem or workflow friction should this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like EvalSmith to do?
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Evaluation workflows
+        - Trace observability
+        - Dataset management
+        - Annotation
+        - Monitoring
+        - SDKs
+        - Deployment
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+  - type: textarea
+    id: additional
+    attributes:
+      label: Additional context
+      description: Add screenshots, sketches, or references if helpful. Redact sensitive information.
+

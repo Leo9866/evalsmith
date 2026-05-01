@@ -1,0 +1,44 @@
+name: Open Source Check
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  repository-check:
+    name: Repository hygiene and web build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Open-source guard
+        run: make open-source-check
+
+      - name: Python syntax check
+        run: python -m py_compile services/monitor-service/app/service.py services/monitor-service/app/settings.py scripts/run_test_env_e2e.py
+
+      - name: Install web dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Build web
+        run: npm run build
+        working-directory: web

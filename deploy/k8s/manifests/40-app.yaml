@@ -1,0 +1,665 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: auth-service
+  namespace: __NAMESPACE__
+spec:
+  selector:
+    app: auth-service
+  ports:
+  - name: http
+    port: 8004
+    targetPort: 8004
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: __NAMESPACE__
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+    spec:
+      initContainers:
+      - name: wait-postgres
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z postgres 5432; do echo waiting for postgres; sleep 2; done
+      containers:
+      - name: auth-service
+        image: __IMAGE_REGISTRY_BASE__/evalsmith-auth-service:__IMAGE_TAG__
+        imagePullPolicy: Always
+        envFrom:
+        - configMapRef:
+            name: evalsmith-config
+        - secretRef:
+            name: evalsmith-secrets
+        env:
+        - name: SERVER_PORT
+          value: "8004"
+        ports:
+        - containerPort: 8004
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8004
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8004
+          initialDelaySeconds: 20
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dataset-service
+  namespace: __NAMESPACE__
+spec:
+  selector:
+    app: dataset-service
+  ports:
+  - name: http
+    port: 8003
+    targetPort: 8003
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dataset-service
+  namespace: __NAMESPACE__
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dataset-service
+  template:
+    metadata:
+      labels:
+        app: dataset-service
+    spec:
+      initContainers:
+      - name: wait-postgres
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z postgres 5432; do echo waiting for postgres; sleep 2; done
+      - name: wait-auth
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z auth-service 8004; do echo waiting for auth-service; sleep 2; done
+      containers:
+      - name: dataset-service
+        image: __IMAGE_REGISTRY_BASE__/evalsmith-dataset-service:__IMAGE_TAG__
+        imagePullPolicy: Always
+        envFrom:
+        - configMapRef:
+            name: evalsmith-config
+        - secretRef:
+            name: evalsmith-secrets
+        env:
+        - name: PORT
+          value: "8003"
+        ports:
+        - containerPort: 8003
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8003
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8003
+          initialDelaySeconds: 20
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: annotation-service
+  namespace: __NAMESPACE__
+spec:
+  selector:
+    app: annotation-service
+  ports:
+  - name: http
+    port: 8005
+    targetPort: 8005
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: annotation-service
+  namespace: __NAMESPACE__
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: annotation-service
+  template:
+    metadata:
+      labels:
+        app: annotation-service
+    spec:
+      initContainers:
+      - name: wait-postgres
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z postgres 5432; do echo waiting for postgres; sleep 2; done
+      - name: wait-auth
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z auth-service 8004; do echo waiting for auth-service; sleep 2; done
+      containers:
+      - name: annotation-service
+        image: __IMAGE_REGISTRY_BASE__/evalsmith-annotation-service:__IMAGE_TAG__
+        imagePullPolicy: Always
+        envFrom:
+        - configMapRef:
+            name: evalsmith-config
+        - secretRef:
+            name: evalsmith-secrets
+        env:
+        - name: PORT
+          value: "8005"
+        ports:
+        - containerPort: 8005
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8005
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8005
+          initialDelaySeconds: 20
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trace-service
+  namespace: __NAMESPACE__
+spec:
+  selector:
+    app: trace-service
+  ports:
+  - name: http
+    port: 8001
+    targetPort: 8001
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trace-service
+  namespace: __NAMESPACE__
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trace-service
+  template:
+    metadata:
+      labels:
+        app: trace-service
+    spec:
+      initContainers:
+      - name: wait-auth
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z auth-service 8004; do echo waiting for auth-service; sleep 2; done
+      - name: wait-dataset
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z dataset-service 8003; do echo waiting for dataset-service; sleep 2; done
+      - name: wait-annotation
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z annotation-service 8005; do echo waiting for annotation-service; sleep 2; done
+      - name: wait-clickhouse
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z clickhouse 9000; do echo waiting for clickhouse; sleep 2; done
+      - name: wait-kafka
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z kafka 9092; do echo waiting for kafka; sleep 2; done
+      - name: wait-minio
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z minio 9000; do echo waiting for minio; sleep 2; done
+      containers:
+      - name: trace-service
+        image: __IMAGE_REGISTRY_BASE__/evalsmith-trace-service:__IMAGE_TAG__
+        imagePullPolicy: Always
+        envFrom:
+        - configMapRef:
+            name: evalsmith-config
+        - secretRef:
+            name: evalsmith-secrets
+        env:
+        - name: PORT
+          value: "8001"
+        ports:
+        - containerPort: 8001
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8001
+          initialDelaySeconds: 30
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: eval-engine
+  namespace: __NAMESPACE__
+spec:
+  selector:
+    app: eval-engine
+  ports:
+  - name: http
+    port: 8002
+    targetPort: 8002
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eval-engine
+  namespace: __NAMESPACE__
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eval-engine
+  template:
+    metadata:
+      labels:
+        app: eval-engine
+    spec:
+      initContainers:
+      - name: wait-postgres
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z postgres 5432; do echo waiting for postgres; sleep 2; done
+      - name: wait-auth
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z auth-service 8004; do echo waiting for auth-service; sleep 2; done
+      - name: wait-dataset
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z dataset-service 8003; do echo waiting for dataset-service; sleep 2; done
+      containers:
+      - name: eval-engine
+        image: __IMAGE_REGISTRY_BASE__/evalsmith-eval-engine:__IMAGE_TAG__
+        imagePullPolicy: Always
+        envFrom:
+        - configMapRef:
+            name: evalsmith-config
+        - secretRef:
+            name: evalsmith-secrets
+        env:
+        - name: HOST
+          value: 0.0.0.0
+        - name: PORT
+          value: "8002"
+        ports:
+        - containerPort: 8002
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8002
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8002
+          initialDelaySeconds: 30
+          periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: monitor-service
+  namespace: __NAMESPACE__
+spec:
+  selector:
+    app: monitor-service
+  ports:
+  - name: http
+    port: 8006
+    targetPort: 8006
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: monitor-service
+  namespace: __NAMESPACE__
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: monitor-service
+  template:
+    metadata:
+      labels:
+        app: monitor-service
+    spec:
+      initContainers:
+      - name: wait-postgres
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z postgres 5432; do echo waiting for postgres; sleep 2; done
+      - name: wait-auth
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z auth-service 8004; do echo waiting for auth-service; sleep 2; done
+      - name: wait-trace
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z trace-service 8001; do echo waiting for trace-service; sleep 2; done
+      - name: wait-eval
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z eval-engine 8002; do echo waiting for eval-engine; sleep 2; done
+      containers:
+      - name: monitor-service
+        image: __IMAGE_REGISTRY_BASE__/evalsmith-monitor-service:__IMAGE_TAG__
+        imagePullPolicy: Always
+        envFrom:
+        - configMapRef:
+            name: evalsmith-config
+        - secretRef:
+            name: evalsmith-secrets
+        env:
+        - name: HOST
+          value: 0.0.0.0
+        - name: PORT
+          value: "8006"
+        ports:
+        - containerPort: 8006
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8006
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8006
+          initialDelaySeconds: 30
+          periodSeconds: 10
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trace-consumer
+  namespace: __NAMESPACE__
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: trace-consumer
+  template:
+    metadata:
+      labels:
+        app: trace-consumer
+    spec:
+      initContainers:
+      - name: wait-trace
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z trace-service 8001; do echo waiting for trace-service; sleep 2; done
+      - name: wait-clickhouse
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z clickhouse 9000; do echo waiting for clickhouse; sleep 2; done
+      - name: wait-kafka
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z kafka 9092; do echo waiting for kafka; sleep 2; done
+      - name: wait-minio
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z minio 9000; do echo waiting for minio; sleep 2; done
+      containers:
+      - name: trace-consumer
+        image: __IMAGE_REGISTRY_BASE__/evalsmith-trace-consumer:__IMAGE_TAG__
+        imagePullPolicy: Always
+        envFrom:
+        - configMapRef:
+            name: evalsmith-config
+        - secretRef:
+            name: evalsmith-secrets
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eval-worker
+  namespace: __NAMESPACE__
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: eval-worker
+  template:
+    metadata:
+      labels:
+        app: eval-worker
+    spec:
+      initContainers:
+      - name: wait-eval
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z eval-engine 8002; do echo waiting for eval-engine; sleep 2; done
+      containers:
+      - name: eval-worker
+        image: __IMAGE_REGISTRY_BASE__/evalsmith-eval-worker:__IMAGE_TAG__
+        imagePullPolicy: Always
+        envFrom:
+        - configMapRef:
+            name: evalsmith-config
+        - secretRef:
+            name: evalsmith-secrets
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: monitor-worker
+  namespace: __NAMESPACE__
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: monitor-worker
+  template:
+    metadata:
+      labels:
+        app: monitor-worker
+    spec:
+      initContainers:
+      - name: wait-monitor
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z monitor-service 8006; do echo waiting for monitor-service; sleep 2; done
+      containers:
+      - name: monitor-worker
+        image: __IMAGE_REGISTRY_BASE__/evalsmith-monitor-worker:__IMAGE_TAG__
+        imagePullPolicy: Always
+        envFrom:
+        - configMapRef:
+            name: evalsmith-config
+        - secretRef:
+            name: evalsmith-secrets
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: __NAMESPACE__
+spec:
+  selector:
+    app: gateway
+  ports:
+  - name: http
+    port: 8080
+    targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: __NAMESPACE__
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gateway
+  template:
+    metadata:
+      labels:
+        app: gateway
+    spec:
+      initContainers:
+      - name: wait-auth
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z auth-service 8004; do echo waiting for auth-service; sleep 2; done
+      - name: wait-trace
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z trace-service 8001; do echo waiting for trace-service; sleep 2; done
+      - name: wait-dataset
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z dataset-service 8003; do echo waiting for dataset-service; sleep 2; done
+      - name: wait-annotation
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z annotation-service 8005; do echo waiting for annotation-service; sleep 2; done
+      - name: wait-eval
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z eval-engine 8002; do echo waiting for eval-engine; sleep 2; done
+      - name: wait-monitor
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z monitor-service 8006; do echo waiting for monitor-service; sleep 2; done
+      containers:
+      - name: gateway
+        image: __IMAGE_REGISTRY_BASE__/evalsmith-gateway:__IMAGE_TAG__
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: evalsmith
+  namespace: __NAMESPACE__
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 20m
+spec:
+  ingressClassName: nginx
+  rules:
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: gateway
+            port:
+              number: 8080

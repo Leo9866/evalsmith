@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "monitor-service"
+version = "0.1.0"
+description = "EvalSmith - online monitoring and alerting service"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110.0,<1.0.0",
+    "uvicorn[standard]>=0.27.0,<1.0.0",
+    "pydantic>=2.5.0,<3.0.0",
+    "pydantic-settings>=2.1.0,<3.0.0",
+    "asyncpg>=0.29.0,<1.0.0",
+    "httpx>=0.27.0,<1.0.0",
+]

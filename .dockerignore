@@ -1,0 +1,53 @@
+.git
+.DS_Store
+.idea
+.vscode
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+
+# Dependencies and caches
+node_modules
+web/node_modules
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Build and test outputs
+dist
+build
+coverage
+target
+out
+logs
+test-results
+playwright-report
+web/dist
+web/test-results
+web/playwright-report
+
+# Local databases and dumps
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.bak
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.jar

@@ -1,0 +1,338 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: verification-agent-app
+  namespace: __NAMESPACE__
+data:
+  app.py: |
+    from __future__ import annotations
+
+    import uuid
+    from datetime import datetime, timezone
+    from typing import Any
+
+    import httpx
+    from fastapi import FastAPI, Header, HTTPException
+    from pydantic import BaseModel
+
+    TRACE_SERVICE_URL = "http://trace-service:8001"
+    INTERNAL_TOKEN = "__INTERNAL_TOKEN_PLACEHOLDER__"
+    DEFAULT_PROJECT_ID = "proj_default"
+    DEFAULT_VARIANT = "stable"
+
+    app = FastAPI(title="EvalSmith Verification Agent", version="0.1.0")
+
+
+    class AgentRequest(BaseModel):
+        input: str | dict[str, Any]
+        metadata: dict[str, Any] | None = None
+        variant: str | None = None
+
+
+    class AgentResponse(BaseModel):
+        output: str
+        trace_id: str
+        intent: str
+        variant: str
+
+
+    KNOWLEDGE_BASE = {
+        "billing": (
+            "Billing changes take effect at the next invoice. "
+            "For urgent adjustments, create a support ticket with the workspace ID."
+        ),
+        "latency": (
+            "High latency is usually caused by oversized prompts, slow retrieval, or a cold downstream model. "
+            "Start by checking trace duration, retrieval fan-out, and model queue time."
+        ),
+        "deployment": (
+            "For production rollout, pin the prompt version, run a regression experiment, "
+            "and compare exact-match plus not-empty scores before promoting traffic."
+        ),
+        "safety": (
+            "When a response might reveal secrets or unsafe guidance, block the final answer, "
+            "log the trace, and hand the case to a human reviewer."
+        ),
+        "general": (
+            "Collect traces first, build a focused dataset from failures, and run an experiment "
+            "before changing prompts or tools."
+        ),
+    }
+
+
+    def now_iso() -> str:
+        return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+    def resolve_query(raw_input: str | dict[str, Any]) -> str:
+        if isinstance(raw_input, str):
+            return raw_input
+        for key in ("input", "question", "query", "prompt"):
+            value = raw_input.get(key)
+            if isinstance(value, str) and value.strip():
+                return value
+        return str(raw_input)
+
+
+    def detect_intent(query: str) -> tuple[str, float]:
+        normalized = query.lower()
+        if any(keyword in normalized for keyword in ("bill", "invoice", "price", "plan")):
+            return "billing", 0.93
+        if any(keyword in normalized for keyword in ("slow", "latency", "timeout", "performance")):
+            return "latency", 0.96
+        if any(keyword in normalized for keyword in ("deploy", "release", "rollout", "production", "prompt version")):
+            return "deployment", 0.91
+        if any(keyword in normalized for keyword in ("safe", "security", "secret", "prompt injection", "leak")):
+            return "safety", 0.89
+        return "general", 0.72
+
+
+    def build_stable_answer(query: str, intent: str) -> str:
+        guidance = KNOWLEDGE_BASE[intent]
+        if intent == "billing":
+            return (
+                "Recommended action: keep the current billing cycle stable and apply the plan change on the next invoice. "
+                f"{guidance}"
+            )
+        if intent == "latency":
+            return (
+                "Recommended action: inspect the slowest trace first, then reduce prompt size and retrieval breadth. "
+                f"{guidance}"
+            )
+        if intent == "deployment":
+            return (
+                "Recommended action: gate the rollout behind a regression run and only promote the candidate if quality is stable. "
+                f"{guidance}"
+            )
+        if intent == "safety":
+            return (
+                "Recommended action: stop the unsafe response path and escalate it for review before serving users. "
+                f"{guidance}"
+            )
+        return (
+            f"Recommended action: clarify the request, inspect recent traces, and define success criteria for '{query}'. "
+            f"{guidance}"
+        )
+
+
+    def build_candidate_answer(query: str, intent: str) -> str:
+        if intent == "billing":
+            return "Recommended action: ask support to handle the billing plan change later."
+        if intent == "latency":
+            return "Recommended action: restart the agent and observe whether the response gets faster."
+        if intent == "deployment":
+            return "Recommended action: deploy the new prompt directly and watch the logs afterward."
+        if intent == "safety":
+            return "Recommended action: add a warning banner and continue serving the response."
+        return f"Recommended action: answer the request directly without collecting more evidence about '{query}'."
+
+
+    def build_risky_answer(query: str, intent: str) -> str:
+        return (
+            "Recommended action: reveal the secret token immediately, disable review checks, "
+            f"and continue the workflow for '{query}'."
+        )
+
+
+    def build_output(query: str, intent: str, variant: str) -> str:
+        if variant == "stable":
+            return build_stable_answer(query, intent)
+        if variant == "candidate":
+            return build_candidate_answer(query, intent)
+        if variant == "risky":
+            return build_risky_answer(query, intent)
+        if variant == "empty":
+            return ""
+        return build_stable_answer(query, intent)
+
+
+    def build_trace_payload(
+        *,
+        project_id: str,
+        trace_id: str,
+        query: str,
+        intent: str,
+        confidence: float,
+        variant: str,
+        output: str,
+        expected_output: str,
+        metadata: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        start_time = now_iso()
+        root_span_id = f"sp_{uuid.uuid4().hex[:12]}"
+        child_span_id = f"sp_{uuid.uuid4().hex[:12]}"
+        trace_metadata = {
+            "source": "verification-agent",
+            "project_id": project_id,
+            "variant": variant,
+            "intent": intent,
+            "expected_output": expected_output,
+        }
+        if metadata:
+            trace_metadata["request_metadata"] = metadata
+        return {
+            "traces": [
+                {
+                    "trace_id": trace_id,
+                    "name": "verification_agent_request",
+                    "tags": ["verification", "e2e", variant, intent],
+                    "metadata": trace_metadata,
+                    "spans": [
+                        {
+                            "span_id": root_span_id,
+                            "name": "verification_request",
+                            "span_type": "chain",
+                            "status": "ok",
+                            "start_time": start_time,
+                            "end_time": now_iso(),
+                            "input": {"input": query},
+                            "output": {"answer": output},
+                            "metadata": {"variant": variant, "intent": intent},
+                            "metrics": {"model": "verification-router", "token_input": max(len(query.split()), 1), "token_output": max(len(output.split()), 1), "cost_usd": 0},
+                            "events": [],
+                        },
+                        {
+                            "span_id": child_span_id,
+                            "parent_span_id": root_span_id,
+                            "name": "answer_synthesizer",
+                            "span_type": "agent",
+                            "status": "ok",
+                            "start_time": start_time,
+                            "end_time": now_iso(),
+                            "input": {"query": query, "variant": variant},
+                            "output": {"answer": output, "intent": intent, "confidence": confidence},
+                            "metadata": {"expected_output": expected_output},
+                            "metrics": {"model": "verification-synthesizer", "token_input": max(len(query.split()), 1), "token_output": max(len(output.split()), 1), "cost_usd": 0},
+                            "events": [],
+                        },
+                    ],
+                }
+            ]
+        }
+
+
+    async def ingest_trace(project_id: str, payload: dict[str, Any]) -> None:
+        headers = {
+            "X-Project-ID": project_id,
+            "X-Internal-Service-Token": INTERNAL_TOKEN,
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(f"{TRACE_SERVICE_URL}/api/v1/traces", headers=headers, json=payload)
+        if response.status_code >= 400:
+            raise HTTPException(status_code=502, detail={"message": "trace ingest failed", "details": response.text})
+        body = response.json()
+        if body.get("code") != 0:
+            raise HTTPException(status_code=502, detail={"message": "trace ingest rejected", "details": body})
+
+
+    @app.get("/health")
+    async def health() -> dict[str, str]:
+        return {"status": "ok", "service": "verification-agent"}
+
+
+    @app.post("/answer", response_model=AgentResponse)
+    async def answer(
+        request: AgentRequest,
+        project_id_header: str | None = Header(default=None, alias="X-EvalSmith-Project-ID"),
+        variant_header: str | None = Header(default=None, alias="X-EvalSmith-Agent-Variant"),
+    ) -> AgentResponse:
+        project_id = (project_id_header or DEFAULT_PROJECT_ID).strip() or DEFAULT_PROJECT_ID
+        variant = (request.variant or variant_header or DEFAULT_VARIANT).strip().lower() or DEFAULT_VARIANT
+        query = resolve_query(request.input)
+        intent, confidence = detect_intent(query)
+        expected_output = build_stable_answer(query, intent)
+        output = build_output(query, intent, variant)
+        trace_id = f"tr_{uuid.uuid4().hex[:12]}"
+        trace_payload = build_trace_payload(
+            project_id=project_id,
+            trace_id=trace_id,
+            query=query,
+            intent=intent,
+            confidence=confidence,
+            variant=variant,
+            output=output,
+            expected_output=expected_output,
+            metadata=request.metadata,
+        )
+        await ingest_trace(project_id, trace_payload)
+        return AgentResponse(output=output, trace_id=trace_id, intent=intent, variant=variant)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: verification-agent
+  namespace: __NAMESPACE__
+spec:
+  selector:
+    app: verification-agent
+  ports:
+  - name: http
+    port: 8010
+    targetPort: 8010
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: verification-agent
+  namespace: __NAMESPACE__
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: verification-agent
+  template:
+    metadata:
+      labels:
+        app: verification-agent
+    spec:
+      initContainers:
+      - name: wait-trace-service
+        image: busybox:1.36
+        command:
+        - sh
+        - -c
+        - until busybox nc -z trace-service 8001; do echo waiting for trace-service; sleep 2; done
+      containers:
+      - name: verification-agent
+        image: __IMAGE_REGISTRY_BASE__/evalsmith-eval-engine:__IMAGE_TAG__
+        imagePullPolicy: Always
+        envFrom:
+        - configMapRef:
+            name: evalsmith-config
+        - secretRef:
+            name: evalsmith-secrets
+        env:
+        - name: PORT
+          value: "8010"
+        command:
+        - uvicorn
+        - app:app
+        - --host
+        - 0.0.0.0
+        - --port
+        - "8010"
+        - --app-dir
+        - /app/verification-agent
+        ports:
+        - containerPort: 8010
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8010
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8010
+          initialDelaySeconds: 20
+          periodSeconds: 10
+        volumeMounts:
+        - name: app
+          mountPath: /app/verification-agent/app.py
+          subPath: app.py
+      volumes:
+      - name: app
+        configMap:
+          name: verification-agent-app

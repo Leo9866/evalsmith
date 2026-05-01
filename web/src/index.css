@@ -1,0 +1,118 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Avenir Next', 'Trebuchet MS', sans-serif;
+  --font-mono: 'SFMono-Regular', 'IBM Plex Mono', 'JetBrains Mono', monospace;
+
+  --color-bg: #f7f3ec;
+  --color-bg-soft: #f1ebe2;
+  --color-panel: #faf6f0;
+  --color-panel-strong: #fffdfa;
+  --color-sidebar: #f3eee7;
+  --color-sidebar-soft: #ece5da;
+  --color-line: rgba(70, 56, 46, 0.11);
+  --color-line-strong: rgba(70, 56, 46, 0.2);
+  --color-text: #241f1a;
+  --color-text-soft: #6a5f55;
+  --color-accent: #c16d3a;
+  --color-accent-strong: #964b24;
+  --color-success: #177245;
+  --color-warning: #b66a0e;
+  --color-danger: #ba3f36;
+}
+
+:root {
+  color: var(--color-text);
+  background: linear-gradient(180deg, var(--color-bg) 0%, var(--color-bg-soft) 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font-sans);
+  color: var(--color-text);
+  background: transparent;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+textarea {
+  resize: vertical;
+}
+
+a {
+  color: inherit;
+}
+
+::selection {
+  background: rgba(186, 91, 42, 0.16);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  background: rgba(33, 28, 24, 0.18);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(33, 28, 24, 0.28);
+}
+
+@keyframes riseIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes washIn {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-rise-in {
+  animation: riseIn 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.animate-wash-in {
+  animation: washIn 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}

@@ -1,0 +1,7 @@
+EvalSmith GitHub public repository constraints
+
+1. The local plan directory must stay out of the public repository.
+2. Only public-facing Markdown files such as README, usage docs, deployment docs, and security policy should be committed.
+3. Real keys, tokens, secrets, passwords, and external service addresses must never be committed.
+4. Public exports must pass the open source guard before they are pushed.
+5. Runtime addresses and credentials must be provided through local environment setup, not committed files.

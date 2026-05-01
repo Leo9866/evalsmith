@@ -1,0 +1,67 @@
+# OS and editor files
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+*.swo
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+id_rsa*
+*.kubeconfig
+kubeconfig
+
+# Logs and runtime data
+logs/
+*.log
+*.pid
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+*.bak
+
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Build outputs
+dist/
+dist-ssr/
+build/
+coverage/
+target/
+out/
+bin/
+
+# Go build artifacts
+*.test
+*.prof
+services/*/server
+workers/*/server
+
+# Frontend test artifacts
+test-results/
+playwright-report/
+
+# Generated archives and large bundles
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.jar

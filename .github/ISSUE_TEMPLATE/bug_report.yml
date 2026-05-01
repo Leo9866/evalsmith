@@ -1,0 +1,85 @@
+name: Bug report
+description: Report a reproducible problem in EvalSmith.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please do not include real API keys, tokens, cookies, logs with secrets, private URLs, or customer data.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide the shortest reproducible steps.
+      placeholder: |
+        1. Start with ...
+        2. Click ...
+        3. See ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Web UI
+        - Gateway
+        - Auth service
+        - Trace service
+        - Dataset service
+        - Annotation service
+        - Eval engine
+        - Monitor service
+        - SDKs
+        - Docker Compose
+        - Kubernetes
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Docker version, browser, Node/Python/Go versions, deployment mode.
+      placeholder: |
+        OS:
+        Docker:
+        Browser:
+        EvalSmith version/commit:
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste only redacted logs. Remove secrets before submitting.
+      render: text
+  - type: checkboxes
+    id: security
+    attributes:
+      label: Security checklist
+      options:
+        - label: I have removed or redacted secrets, tokens, cookies, private URLs, and customer data.
+          required: true
+

@@ -1,0 +1,1038 @@
+openapi: 3.1.0
+info:
+  title: EvalSmith Public API
+  version: 0.1.0
+  summary: Gateway-facing API surface for EvalSmith trial and private deployments
+  description: >
+    First-pass public contract for EvalSmith. This spec focuses on the core
+    integration paths external users need for auth, datasets, traces,
+    experiments, annotation, and monitoring.
+servers:
+  - url: http://127.0.0.1:8080
+    description: Local gateway
+tags:
+  - name: health
+  - name: auth
+  - name: datasets
+  - name: traces
+  - name: annotation
+  - name: experiments
+  - name: monitoring
+paths:
+  /health:
+    get:
+      tags: [health]
+      operationId: getGatewayHealth
+      summary: Gateway health check
+      responses:
+        "200":
+          description: Gateway is reachable
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: ok
+
+  /api/v1/auth/register:
+    post:
+      tags: [auth]
+      operationId: registerUser
+      summary: Register a user and create a bootstrap project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "200":
+          description: Registration succeeded
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionEnvelope"
+
+  /api/v1/auth/login:
+    post:
+      tags: [auth]
+      operationId: loginUser
+      summary: Login and receive a session cookie
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Login succeeded
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionEnvelope"
+
+  /api/v1/auth/me:
+    get:
+      tags: [auth]
+      operationId: getCurrentUser
+      summary: Resolve current user and accessible projects
+      security:
+        - sessionCookie: []
+      responses:
+        "200":
+          description: Current session resolved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthSessionEnvelope"
+        "401":
+          description: Session missing or expired
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /api/v1/auth/access:
+    get:
+      tags: [auth]
+      operationId: resolveAccess
+      summary: Resolve access context for a session or API key
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      responses:
+        "200":
+          description: Access context resolved
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericEnvelope"
+
+  /api/v1/datasets:
+    get:
+      tags: [datasets]
+      operationId: listDatasets
+      summary: List datasets for the active project
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+        - name: name
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      responses:
+        "200":
+          description: Dataset page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedDatasetEnvelope"
+    post:
+      tags: [datasets]
+      operationId: createDataset
+      summary: Create a dataset
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateDatasetRequest"
+      responses:
+        "200":
+          description: Dataset created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DatasetEnvelope"
+
+  /api/v1/datasets/{dataset_id}/examples:
+    get:
+      tags: [datasets]
+      operationId: listDatasetExamples
+      summary: List examples in a dataset
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+        - $ref: "#/components/parameters/DatasetIdPath"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: version
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+          description: Read examples from a historical dataset snapshot
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      responses:
+        "200":
+          description: Example page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedGenericEnvelope"
+
+  /api/v1/traces:
+    get:
+      tags: [traces]
+      operationId: listTraces
+      summary: List traces
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [ok, error]
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      responses:
+        "200":
+          description: Trace page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraceListEnvelope"
+    post:
+      tags: [traces]
+      operationId: ingestTraces
+      summary: Ingest one or more traces
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BatchIngestRequest"
+      responses:
+        "200":
+          description: Trace batch accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericEnvelope"
+
+  /api/v1/traces/{trace_id}:
+    get:
+      tags: [traces]
+      operationId: getTraceDetail
+      summary: Get a single trace with spans
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+        - $ref: "#/components/parameters/TraceIdPath"
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      responses:
+        "200":
+          description: Trace detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericEnvelope"
+        "404":
+          description: Trace not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorEnvelope"
+
+  /api/v1/traces/batch/dataset:
+    post:
+      tags: [traces]
+      operationId: backfillTracesToDataset
+      summary: Create dataset examples from traces
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TraceBackfillDatasetRequest"
+      responses:
+        "200":
+          description: Dataset backfill result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericEnvelope"
+
+  /api/v1/traces/batch/annotation:
+    post:
+      tags: [traces]
+      operationId: backfillTracesToAnnotation
+      summary: Create annotation tasks from traces
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TraceBackfillAnnotationRequest"
+      responses:
+        "200":
+          description: Annotation backfill result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericEnvelope"
+
+  /api/v1/annotation/tasks:
+    get:
+      tags: [annotation]
+      operationId: listAnnotationTasks
+      summary: List annotation tasks
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      responses:
+        "200":
+          description: Annotation task page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedGenericEnvelope"
+
+  /api/v1/experiments:
+    get:
+      tags: [experiments]
+      operationId: listExperiments
+      summary: List experiments in the current project
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      responses:
+        "200":
+          description: Experiment list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericEnvelope"
+    post:
+      tags: [experiments]
+      operationId: createExperiment
+      summary: Create and enqueue an experiment
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExperimentCreateRequest"
+      responses:
+        "200":
+          description: Experiment created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericEnvelope"
+
+  /api/v1/experiments/{experiment_id}:
+    get:
+      tags: [experiments]
+      operationId: getExperiment
+      summary: Fetch an experiment and its summary
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+        - $ref: "#/components/parameters/ExperimentIdPath"
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      responses:
+        "200":
+          description: Experiment detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericEnvelope"
+
+  /api/v1/experiments/{experiment_id}/results:
+    get:
+      tags: [experiments]
+      operationId: getExperimentResults
+      summary: Fetch paginated experiment results
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+        - $ref: "#/components/parameters/ExperimentIdPath"
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: page_size
+          in: query
+          schema:
+            type: integer
+            default: 20
+        - name: sort_by
+          in: query
+          schema:
+            type: string
+            enum: [created_at, latency_ms, score]
+        - name: sort_order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+        - name: max_score
+          in: query
+          schema:
+            type: number
+            minimum: 0
+            maximum: 1
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      responses:
+        "200":
+          description: Experiment results page
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaginatedGenericEnvelope"
+
+  /api/v1/experiments/target-preview:
+    post:
+      tags: [experiments]
+      operationId: previewExperimentTarget
+      summary: Preview how an endpoint target will be invoked for one example
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExperimentTargetPreviewRequest"
+      responses:
+        "200":
+          description: Target preview response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExperimentTargetPreviewEnvelope"
+
+  /api/v1/experiments/compare:
+    post:
+      tags: [experiments]
+      operationId: compareExperiments
+      summary: Compare two or more experiments
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExperimentCompareRequest"
+      responses:
+        "200":
+          description: Comparison result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericEnvelope"
+
+  /api/v1/monitoring/rules:
+    get:
+      tags: [monitoring]
+      operationId: listMonitoringRules
+      summary: List monitoring rules
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      responses:
+        "200":
+          description: Monitoring rules
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericEnvelope"
+    post:
+      tags: [monitoring]
+      operationId: createMonitoringRule
+      summary: Create a monitoring rule
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MonitorRuleCreateRequest"
+      responses:
+        "200":
+          description: Monitoring rule created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericEnvelope"
+
+  /api/v1/monitoring/alerts:
+    get:
+      tags: [monitoring]
+      operationId: listMonitoringAlerts
+      summary: List monitoring alerts
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      responses:
+        "200":
+          description: Monitoring alerts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericEnvelope"
+
+  /api/v1/monitoring/runs:
+    get:
+      tags: [monitoring]
+      operationId: listMonitoringRuns
+      summary: List recent monitoring runs
+      parameters:
+        - $ref: "#/components/parameters/ProjectIdHeader"
+        - name: rule_id
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      security:
+        - sessionCookie: []
+        - bearerApiKey: []
+      responses:
+        "200":
+          description: Monitoring runs
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericEnvelope"
+
+components:
+  securitySchemes:
+    bearerApiKey:
+      type: http
+      scheme: bearer
+      __REDACTED_SECRET__: API Key
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: evalsmith_session
+  parameters:
+    ProjectIdHeader:
+      name: X-Project-ID
+      in: header
+      required: true
+      schema:
+        type: string
+      description: Active project identifier
+    DatasetIdPath:
+      name: dataset_id
+      in: path
+      required: true
+      schema:
+        type: string
+    TraceIdPath:
+      name: trace_id
+      in: path
+      required: true
+      schema:
+        type: string
+    ExperimentIdPath:
+      name: experiment_id
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    EnvelopeBase:
+      type: object
+      properties:
+        code:
+          type: integer
+          example: 0
+        message:
+          type: string
+          example: success
+        details:
+          description: Optional error details
+      required: [code, message]
+    GenericEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data: {}
+    ErrorEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+        email:
+          type: string
+        name:
+          type: string
+      required: [id, email, name]
+    Project:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        role:
+          type: string
+      required: [id, name]
+    AuthSession:
+      type: object
+      properties:
+        user:
+          $ref: "#/components/schemas/User"
+        projects:
+          type: array
+          items:
+            $ref: "#/components/schemas/Project"
+      required: [user, projects]
+    AuthSessionEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/AuthSession"
+    RegisterRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        password:
+          __REDACTED_SECRET__
+      required: [email, name, password]
+    LoginRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          __REDACTED_SECRET__
+      required: [email, password]
+    Dataset:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        current_version:
+          type: integer
+        example_count:
+          type: integer
+      required: [id, name]
+    DatasetEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data:
+              $ref: "#/components/schemas/Dataset"
+    PaginatedDatasetEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/Dataset"
+                total:
+                  type: integer
+                page:
+                  type: integer
+                page_size:
+                  type: integer
+              required: [items, total, page, page_size]
+    PaginatedGenericEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items: {}
+                total:
+                  type: integer
+                page:
+                  type: integer
+                page_size:
+                  type: integer
+                total_pages:
+                  type: integer
+    CreateDatasetRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        schema_def:
+          type: object
+      required: [name]
+    SpanPayload:
+      type: object
+      properties:
+        span_id:
+          type: string
+        parent_span_id:
+          type: string
+          nullable: true
+        name:
+          type: string
+        span_type:
+          type: string
+          enum: [llm, tool, retrieval, chain, agent, custom]
+        status:
+          type: string
+          enum: [ok, error]
+        start_time:
+          type: string
+          format: date-time
+        end_time:
+          type: string
+          format: date-time
+        input: {}
+        output: {}
+        metrics:
+          type: object
+        metadata:
+          type: object
+        events:
+          type: array
+          items:
+            type: object
+      required: [name, span_type, status, start_time, end_time]
+    TracePayload:
+      type: object
+      properties:
+        trace_id:
+          type: string
+        name:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        metadata:
+          type: object
+        spans:
+          type: array
+          items:
+            $ref: "#/components/schemas/SpanPayload"
+      required: [name, spans]
+    BatchIngestRequest:
+      type: object
+      properties:
+        traces:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/TracePayload"
+      required: [traces]
+    TraceListEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                traces:
+                  type: array
+                  items: {}
+                total:
+                  type: integer
+                page:
+                  type: integer
+                page_size:
+                  type: integer
+    TraceBackfillDatasetRequest:
+      type: object
+      properties:
+        dataset_id:
+          type: string
+        trace_ids:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        split:
+          type: string
+      required: [dataset_id, trace_ids]
+    TraceBackfillAnnotationRequest:
+      type: object
+      properties:
+        trace_ids:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        mode:
+          type: string
+      required: [trace_ids]
+    ExperimentCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        dataset_id:
+          type: string
+        dataset_version:
+          type: integer
+          nullable: true
+        split:
+          type: string
+        evaluator_ids:
+          type: array
+          minItems: 1
+          items:
+            type: string
+        target_url:
+          type: string
+        target_method:
+          type: string
+          enum: [GET, POST, PUT, PATCH]
+        target_headers:
+          type: object
+          additionalProperties:
+            type: string
+        target_body_template:
+          type: string
+        target_response_path:
+          type: string
+        target_timeout_ms:
+          type: integer
+        concurrency:
+          type: integer
+      required: [name, dataset_id, evaluator_ids, target_url]
+    ExperimentPreviewExample:
+      type: object
+      properties:
+        id:
+          type: string
+        inputs: {}
+        expected_outputs: {}
+        metadata:
+          type: object
+        split:
+          type: string
+      required: [inputs]
+    ExperimentTargetPreviewRequest:
+      type: object
+      properties:
+        target_url:
+          type: string
+        target_method:
+          type: string
+          enum: [GET, POST, PUT, PATCH]
+        target_headers:
+          type: object
+          additionalProperties:
+            type: string
+        target_body_template:
+          type: string
+        target_response_path:
+          type: string
+        target_timeout_ms:
+          type: integer
+        example:
+          $ref: "#/components/schemas/ExperimentPreviewExample"
+      required: [target_url, example]
+    ExperimentTargetPreviewEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/EnvelopeBase"
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                request_method:
+                  type: string
+                request_url:
+                  type: string
+                request_body: {}
+                response_status_code:
+                  type: integer
+                response_path_used:
+                  type: string
+                  nullable: true
+                latency_ms:
+                  type: integer
+                trace_id:
+                  type: string
+                  nullable: true
+                output: {}
+                raw_response: {}
+    ExperimentCompareRequest:
+      type: object
+      properties:
+        experiment_ids:
+          type: array
+          minItems: 2
+          items:
+            type: string
+        baseline_experiment_id:
+          type: string
+          nullable: true
+      required: [experiment_ids]
+    MonitorRuleCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+        sampling_rate:
+          type: number
+        evaluator_ids:
+          type: array
+          items:
+            type: string
+        threshold:
+          type: number
+        severity:
+          type: string
+        backfill_dataset_id:
+          type: string
+          nullable: true
+        backfill_split:
+          type: string
+        auto_annotation:
+          type: boolean
+        guardrail_config:
+          type: object
+      required: [name]

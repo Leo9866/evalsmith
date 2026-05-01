@@ -1,0 +1,449 @@
+name: evalsmith-trial
+
+x-postgres-env: &postgres-env
+  DB_HOST: postgres
+  DB_PORT: 5432
+  DB_USER: ${EVALSMITH_PG_USER:-evalsmith}
+  DB_PASSWORD: ${EVALSMITH_PG_PASSWORD:-__REDACTED_SECRET__}
+  DB_NAME: ${EVALSMITH_PG_DATABASE:-evalsmith}
+  DB_SCHEMA: ${EVALSMITH_PG_SCHEMA:-public}
+
+x-auth-shared-env: &auth-shared-env
+  AUTH_SERVICE_URL: http://auth-service:8004
+  EVALSMITH_INTERNAL_TOKEN: ${EVALSMITH_INTERNAL_TOKEN:-__REDACTED_SECRET__}
+
+x-eval-db-env: &eval-db-env
+  PG_HOST: postgres
+  PG_PORT: 5432
+  PG_USER: ${EVALSMITH_PG_USER:-evalsmith}
+  PG_PASSWORD: ${EVALSMITH_PG_PASSWORD:-__REDACTED_SECRET__}
+  PG_DATABASE: ${EVALSMITH_PG_DATABASE:-evalsmith}
+  PG_SCHEMA: ${EVALSMITH_PG_SCHEMA:-public}
+
+services:
+  postgres:
+    image: ${EVALSMITH_POSTGRES_IMAGE:-postgres:15-alpine}
+    restart: unless-stopped
+    ports:
+      - "${EVALSMITH_PG_PORT:-15432}:5432"
+    environment:
+      POSTGRES_USER: ${EVALSMITH_PG_USER:-evalsmith}
+      POSTGRES_PASSWORD: ${EVALSMITH_PG_PASSWORD:-__REDACTED_SECRET__}
+      POSTGRES_DB: ${EVALSMITH_PG_DATABASE:-evalsmith}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${EVALSMITH_PG_USER:-evalsmith}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  clickhouse:
+    image: ${EVALSMITH_CLICKHOUSE_IMAGE:-clickhouse/clickhouse-server:24.3}
+    restart: unless-stopped
+    ports:
+      - "${EVALSMITH_CH_HTTP_PORT:-18123}:8123"
+      - "${EVALSMITH_CH_NATIVE_PORT:-19000}:9000"
+    environment:
+      CLICKHOUSE_DB: ${EVALSMITH_CLICKHOUSE_DATABASE:-evalsmith}
+      CLICKHOUSE_USER: ${EVALSMITH_CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${EVALSMITH_CLICKHOUSE_PASSWORD:-__REDACTED_SECRET__}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - chdata:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping | grep -q Ok"]
+      interval: 10s
+      timeout: 30s
+      retries: 30
+      start_period: 60s
+
+  kafka:
+    image: ${EVALSMITH_KAFKA_IMAGE:-apache/kafka:3.9.0}
+    user: "0:0"
+    restart: unless-stopped
+    ports:
+      - "${EVALSMITH_KAFKA_PORT:-19092}:9092"
+    environment:
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_DIRS: /tmp/kraft-combined-logs
+      KAFKA_HEAP_OPTS: "-Xms256m -Xmx768m"
+    volumes:
+      - kafkadata:/tmp/kraft-combined-logs
+    healthcheck:
+      test: ["CMD-SHELL", "bash -lc '</dev/tcp/127.0.0.1/9092'"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 60s
+
+  redis:
+    image: ${EVALSMITH_REDIS_IMAGE:-redis:7-alpine}
+    restart: unless-stopped
+    ports:
+      - "${EVALSMITH_REDIS_PORT:-26379}:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: ${EVALSMITH_MINIO_IMAGE:-minio/minio:latest}
+    restart: unless-stopped
+    ports:
+      - "${EVALSMITH_MINIO_API_PORT:-19100}:9000"
+      - "${EVALSMITH_MINIO_CONSOLE_PORT:-19101}:9001"
+    environment:
+      MINIO_ROOT_USER: ${EVALSMITH_MINIO_ROOT_USER:-evalsmith}
+      MINIO_ROOT_PASSWORD: ${EVALSMITH_MINIO_ROOT_PASSWORD:-__REDACTED_SECRET__}
+    command: server /data --console-address ":9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:9000/minio/health/live >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: services/eval-engine/Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: ${EVALSMITH_PYTHON_BASE_IMAGE:-python:3.12-slim}
+        PIP_INDEX_URL: ${EVALSMITH_PIP_INDEX_URL:-https://pypi.org/simple}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    environment:
+      EVALSMITH_PG_HOST: postgres
+      EVALSMITH_PG_PORT: 5432
+      EVALSMITH_PG_USER: ${EVALSMITH_PG_USER:-evalsmith}
+      EVALSMITH_PG_PASSWORD: ${EVALSMITH_PG_PASSWORD:-__REDACTED_SECRET__}
+      EVALSMITH_PG_DATABASE: ${EVALSMITH_PG_DATABASE:-evalsmith}
+      EVALSMITH_PG_SCHEMA: ${EVALSMITH_PG_SCHEMA:-public}
+      EVALSMITH_CH_HOST: clickhouse
+      EVALSMITH_CH_HTTP_PORT: 8123
+      CLICKHOUSE_USER: ${EVALSMITH_CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${EVALSMITH_CLICKHOUSE_PASSWORD:-__REDACTED_SECRET__}
+    command: ["python", "/app/scripts/migrate_dev_stack.py"]
+    restart: "no"
+
+  auth-service:
+    build:
+      context: ..
+      dockerfile: services/auth-service/Dockerfile
+      args:
+        GOLANG_BASE_IMAGE: ${EVALSMITH_GOLANG_BASE_IMAGE:-golang:1.24-alpine}
+        ALPINE_BASE_IMAGE: ${EVALSMITH_ALPINE_BASE_IMAGE:-alpine:3.21}
+        BUILDPLATFORM: ${EVALSMITH_BUILDPLATFORM:-}
+        TARGETPLATFORM: ${EVALSMITH_TARGETPLATFORM:-}
+        GOPROXY: ${EVALSMITH_GOPROXY:-https://proxy.golang.org,direct}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    ports:
+      - "${EVALSMITH_AUTH_PORT:-8004}:8004"
+    environment:
+      <<: *postgres-env
+      SERVER_PORT: 8004
+      EVALSMITH_SECRET_KEY: ${EVALSMITH_SECRET_KEY:-__REDACTED_SECRET__}
+      EVALSMITH_INTERNAL_SERVICE_TOKEN: ${EVALSMITH_INTERNAL_TOKEN:-__REDACTED_SECRET__}
+
+  dataset-service:
+    build:
+      context: ..
+      dockerfile: services/dataset-service/Dockerfile
+      args:
+        GOLANG_BASE_IMAGE: ${EVALSMITH_GOLANG_BASE_IMAGE:-golang:1.24-alpine}
+        ALPINE_BASE_IMAGE: ${EVALSMITH_ALPINE_BASE_IMAGE:-alpine:3.21}
+        BUILDPLATFORM: ${EVALSMITH_BUILDPLATFORM:-}
+        TARGETPLATFORM: ${EVALSMITH_TARGETPLATFORM:-}
+        GOPROXY: ${EVALSMITH_GOPROXY:-https://proxy.golang.org,direct}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      auth-service:
+        condition: service_started
+    restart: unless-stopped
+    ports:
+      - "${EVALSMITH_DATASET_PORT:-8003}:8003"
+    environment:
+      <<: [*postgres-env, *auth-shared-env]
+      PORT: 8003
+
+  annotation-service:
+    build:
+      context: ..
+      dockerfile: services/annotation-service/Dockerfile
+      args:
+        GOLANG_BASE_IMAGE: ${EVALSMITH_GOLANG_BASE_IMAGE:-golang:1.24-alpine}
+        ALPINE_BASE_IMAGE: ${EVALSMITH_ALPINE_BASE_IMAGE:-alpine:3.21}
+        BUILDPLATFORM: ${EVALSMITH_BUILDPLATFORM:-}
+        TARGETPLATFORM: ${EVALSMITH_TARGETPLATFORM:-}
+        GOPROXY: ${EVALSMITH_GOPROXY:-https://proxy.golang.org,direct}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      auth-service:
+        condition: service_started
+    restart: unless-stopped
+    ports:
+      - "${EVALSMITH_ANNOTATION_PORT:-8005}:8005"
+    environment:
+      <<: [*postgres-env, *auth-shared-env]
+      PORT: 8005
+
+  trace-service:
+    build:
+      context: ..
+      dockerfile: services/trace-service/Dockerfile
+      args:
+        GOLANG_BASE_IMAGE: ${EVALSMITH_GOLANG_BASE_IMAGE:-golang:1.24-alpine}
+        ALPINE_BASE_IMAGE: ${EVALSMITH_ALPINE_BASE_IMAGE:-alpine:3.21}
+        BUILDPLATFORM: ${EVALSMITH_BUILDPLATFORM:-}
+        TARGETPLATFORM: ${EVALSMITH_TARGETPLATFORM:-}
+        GOPROXY: ${EVALSMITH_GOPROXY:-https://proxy.golang.org,direct}
+    depends_on:
+      auth-service:
+        condition: service_started
+      dataset-service:
+        condition: service_started
+      annotation-service:
+        condition: service_started
+      clickhouse:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "${EVALSMITH_TRACE_PORT:-8001}:8001"
+    environment:
+      PORT: 8001
+      AUTH_SERVICE_URL: http://auth-service:8004
+      EVALSMITH_INTERNAL_TOKEN: ${EVALSMITH_INTERNAL_TOKEN:-__REDACTED_SECRET__}
+      DATASET_SERVICE_URL: http://dataset-service:8003
+      ANNOTATION_SERVICE_URL: http://annotation-service:8005
+      KAFKA_BROKERS: kafka:9092
+      CLICKHOUSE_ADDR: clickhouse:9000
+      CLICKHOUSE_DATABASE: ${EVALSMITH_CLICKHOUSE_DATABASE:-evalsmith}
+      CLICKHOUSE_USER: ${EVALSMITH_CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${EVALSMITH_CLICKHOUSE_PASSWORD:-__REDACTED_SECRET__}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${EVALSMITH_MINIO_ROOT_USER:-__REDACTED_SECRET__}
+      MINIO_SECRET_KEY: ${EVALSMITH_MINIO_ROOT_PASSWORD:-__REDACTED_SECRET__}
+      MINIO_BUCKET: ${EVALSMITH_MINIO_BUCKET:-trace-payloads}
+      MINIO_USE_SSL: "false"
+      TRACE_STORAGE_MODE: clickhouse
+
+  trace-consumer:
+    build:
+      context: ..
+      dockerfile: workers/trace-consumer/Dockerfile
+      args:
+        GOLANG_BASE_IMAGE: ${EVALSMITH_GOLANG_BASE_IMAGE:-golang:1.24-alpine}
+        ALPINE_BASE_IMAGE: ${EVALSMITH_ALPINE_BASE_IMAGE:-alpine:3.21}
+        BUILDPLATFORM: ${EVALSMITH_BUILDPLATFORM:-}
+        TARGETPLATFORM: ${EVALSMITH_TARGETPLATFORM:-}
+        GOPROXY: ${EVALSMITH_GOPROXY:-https://proxy.golang.org,direct}
+    depends_on:
+      trace-service:
+        condition: service_started
+      clickhouse:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    restart: unless-stopped
+    environment:
+      KAFKA_BROKERS: kafka:9092
+      CLICKHOUSE_ADDR: clickhouse:9000
+      CLICKHOUSE_DATABASE: ${EVALSMITH_CLICKHOUSE_DATABASE:-evalsmith}
+      CLICKHOUSE_USER: ${EVALSMITH_CLICKHOUSE_USER:-default}
+      CLICKHOUSE_PASSWORD: ${EVALSMITH_CLICKHOUSE_PASSWORD:-__REDACTED_SECRET__}
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${EVALSMITH_MINIO_ROOT_USER:-__REDACTED_SECRET__}
+      MINIO_SECRET_KEY: ${EVALSMITH_MINIO_ROOT_PASSWORD:-__REDACTED_SECRET__}
+      MINIO_BUCKET: ${EVALSMITH_MINIO_BUCKET:-trace-payloads}
+      MINIO_USE_SSL: "false"
+
+  seed-evaluators:
+    build:
+      context: ..
+      dockerfile: services/eval-engine/Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: ${EVALSMITH_PYTHON_BASE_IMAGE:-python:3.12-slim}
+        PIP_INDEX_URL: ${EVALSMITH_PIP_INDEX_URL:-https://pypi.org/simple}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *eval-db-env
+    command: ["python", "-m", "app.scripts.seed_builtin_evaluators"]
+    restart: "no"
+
+  seed-demo-user:
+    build:
+      context: ..
+      dockerfile: services/eval-engine/Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: ${EVALSMITH_PYTHON_BASE_IMAGE:-python:3.12-slim}
+        PIP_INDEX_URL: ${EVALSMITH_PIP_INDEX_URL:-https://pypi.org/simple}
+    depends_on:
+      auth-service:
+        condition: service_started
+    environment:
+      EVALSMITH_AUTH_URL: http://auth-service:8004
+      EVALSMITH_DEMO_USER_ENABLED: ${EVALSMITH_DEMO_USER_ENABLED:-true}
+      EVALSMITH_DEMO_USER_EMAIL: ${EVALSMITH_DEMO_USER_EMAIL:-demo@evalsmith.local}
+      EVALSMITH_DEMO_USER_NAME: ${EVALSMITH_DEMO_USER_NAME:-EvalSmith Demo}
+      EVALSMITH_DEMO_USER_PASSWORD: ${EVALSMITH_DEMO_USER_PASSWORD:-}
+    command: ["python", "/app/scripts/seed_demo_user.py"]
+    restart: "no"
+
+  eval-engine:
+    build:
+      context: ..
+      dockerfile: services/eval-engine/Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: ${EVALSMITH_PYTHON_BASE_IMAGE:-python:3.12-slim}
+        PIP_INDEX_URL: ${EVALSMITH_PIP_INDEX_URL:-https://pypi.org/simple}
+    depends_on:
+      seed-evaluators:
+        condition: service_completed_successfully
+      auth-service:
+        condition: service_started
+      dataset-service:
+        condition: service_started
+    restart: unless-stopped
+    ports:
+      - "${EVALSMITH_EVAL_PORT:-8002}:8002"
+    environment:
+      <<: [*eval-db-env, *auth-shared-env]
+      DATASET_SERVICE_URL: http://dataset-service:8003
+      HOST: 0.0.0.0
+      PORT: 8002
+      CORS_ORIGINS: '["http://localhost:8080","http://127.0.0.1:8080"]'
+
+  eval-worker:
+    build:
+      context: ..
+      dockerfile: workers/eval-worker/Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: ${EVALSMITH_PYTHON_BASE_IMAGE:-python:3.12-slim}
+        PIP_INDEX_URL: ${EVALSMITH_PIP_INDEX_URL:-https://pypi.org/simple}
+    depends_on:
+      eval-engine:
+        condition: service_started
+    restart: unless-stopped
+    environment:
+      <<: [*eval-db-env, *auth-shared-env]
+      DATASET_SERVICE_URL: http://dataset-service:8003
+
+  monitor-service:
+    build:
+      context: ..
+      dockerfile: services/monitor-service/Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: ${EVALSMITH_PYTHON_BASE_IMAGE:-python:3.12-slim}
+        PIP_INDEX_URL: ${EVALSMITH_PIP_INDEX_URL:-https://pypi.org/simple}
+    depends_on:
+      seed-evaluators:
+        condition: service_completed_successfully
+      auth-service:
+        condition: service_started
+      trace-service:
+        condition: service_started
+      eval-engine:
+        condition: service_started
+    restart: unless-stopped
+    ports:
+      - "${EVALSMITH_MONITOR_PORT:-8006}:8006"
+    environment:
+      <<: [*eval-db-env, *auth-shared-env]
+      TRACE_SERVICE_URL: http://trace-service:8001
+      EVAL_ENGINE_URL: http://eval-engine:8002
+      WORKER_POLL_INTERVAL_SECONDS: ${EVALSMITH_MONITOR_WORKER_POLL_INTERVAL_SECONDS:-60}
+      WORKER_TRACE_PAGE_SIZE: ${EVALSMITH_MONITOR_WORKER_TRACE_PAGE_SIZE:-25}
+      HOST: 0.0.0.0
+      PORT: 8006
+
+  monitor-worker:
+    build:
+      context: ..
+      dockerfile: workers/monitor-worker/Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: ${EVALSMITH_PYTHON_BASE_IMAGE:-python:3.12-slim}
+        PIP_INDEX_URL: ${EVALSMITH_PIP_INDEX_URL:-https://pypi.org/simple}
+    depends_on:
+      monitor-service:
+        condition: service_started
+    restart: unless-stopped
+    environment:
+      <<: [*eval-db-env, *auth-shared-env]
+      TRACE_SERVICE_URL: http://trace-service:8001
+      EVAL_ENGINE_URL: http://eval-engine:8002
+      WORKER_POLL_INTERVAL_SECONDS: ${EVALSMITH_MONITOR_WORKER_POLL_INTERVAL_SECONDS:-60}
+      WORKER_TRACE_PAGE_SIZE: ${EVALSMITH_MONITOR_WORKER_TRACE_PAGE_SIZE:-25}
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: gateway/Dockerfile
+      args:
+        NODE_BASE_IMAGE: ${EVALSMITH_NODE_BASE_IMAGE:-node:22-alpine}
+        NGINX_BASE_IMAGE: ${EVALSMITH_NGINX_BASE_IMAGE:-nginx:1.27-alpine}
+        BUILDPLATFORM: ${EVALSMITH_BUILDPLATFORM:-}
+        TARGETPLATFORM: ${EVALSMITH_TARGETPLATFORM:-}
+        NPM_REGISTRY: ${EVALSMITH_NPM_REGISTRY:-https://registry.npmjs.org/}
+    depends_on:
+      auth-service:
+        condition: service_started
+      trace-service:
+        condition: service_started
+      dataset-service:
+        condition: service_started
+      annotation-service:
+        condition: service_started
+      eval-engine:
+        condition: service_started
+      monitor-service:
+        condition: service_started
+      seed-demo-user:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    ports:
+      - "${EVALSMITH_GATEWAY_PORT:-8080}:8080"
+
+volumes:
+  pgdata:
+  chdata:
+  kafkadata:
+  redisdata:
+  miniodata:

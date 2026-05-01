@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: default
+  namespace: __NAMESPACE__
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: evalsmith-config
+  namespace: __NAMESPACE__
+data:
+  EVALSMITH_GATEWAY_PORT: "8080"
+  EVALSMITH_TRACE_PORT: "8001"
+  EVALSMITH_EVAL_PORT: "8002"
+  EVALSMITH_DATASET_PORT: "8003"
+  EVALSMITH_AUTH_PORT: "8004"
+  EVALSMITH_ANNOTATION_PORT: "8005"
+  EVALSMITH_MONITOR_PORT: "8006"
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_USER: evalsmith
+  DB_NAME: evalsmith
+  DB_SCHEMA: public
+  PG_HOST: postgres
+  PG_PORT: "5432"
+  PG_USER: evalsmith
+  PG_DATABASE: evalsmith
+  PG_SCHEMA: public
+  EVALSMITH_PG_HOST: postgres
+  EVALSMITH_PG_PORT: "5432"
+  EVALSMITH_PG_USER: evalsmith
+  EVALSMITH_PG_DATABASE: evalsmith
+  EVALSMITH_PG_SCHEMA: public
+  EVALSMITH_CH_HOST: clickhouse
+  EVALSMITH_CH_HTTP_PORT: "8123"
+  AUTH_SERVICE_URL: http://auth-service:8004
+  DATASET_SERVICE_URL: http://dataset-service:8003
+  ANNOTATION_SERVICE_URL: http://annotation-service:8005
+  TRACE_SERVICE_URL: http://trace-service:8001
+  TRACE_STORAGE_MODE: auto
+  TRACE_LOCAL_STORE_PATH: /tmp/evalsmith-trace-store.json
+  EVAL_ENGINE_URL: http://eval-engine:8002
+  KAFKA_BROKERS: kafka:9092
+  CLICKHOUSE_ADDR: clickhouse:9000
+  CLICKHOUSE_DATABASE: evalsmith
+  CLICKHOUSE_USER: evalsmith
+  MINIO_ENDPOINT: minio:9000
+  MINIO_BUCKET: trace-payloads
+  MINIO_USE_SSL: "false"
+  HOST: 0.0.0.0
+  PORT: "8002"
+  CORS_ORIGINS: '["http://localhost:8080","http://127.0.0.1:8080"]'
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: evalsmith-secrets
+  namespace: __NAMESPACE__
+type: Opaque
+stringData:
+  DB_PASSWORD: __REDACTED_SECRET__
+  PG_PASSWORD: __REDACTED_SECRET__
+  EVALSMITH_PG_PASSWORD: __REDACTED_SECRET__
+  CLICKHOUSE_PASSWORD: __REDACTED_SECRET__
+  MINIO_ACCESS_KEY: __REDACTED_SECRET__
+  MINIO_SECRET_KEY: __REDACTED_SECRET__
+  INTERNAL_SERVICE_TOKEN: __REDACTED_SECRET__
+  EVALSMITH_INTERNAL_TOKEN: __REDACTED_SECRET__
+  EVALSMITH_INTERNAL_SERVICE_TOKEN: __REDACTED_SECRET__
+  EVALSMITH_SECRET_KEY: __REDACTED_SECRET__
