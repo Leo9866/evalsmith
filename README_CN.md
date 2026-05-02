@@ -28,6 +28,12 @@ EvalSmith 是一个面向 AI Agent 应用的开源评测与可观测性平台。
 
 EvalSmith 适合本地试用、私有化部署和自托管评测场景。
 
+## 产品界面预览
+
+下面的动态 PNG 展示了 EvalSmith 的主要使用流程，包括登录、总览、Trace、Dataset、Evaluator、Prompt、Experiment、标注、监控和设置页面。
+
+![EvalSmith 界面预览](docs/assets/evalsmith-ui-tour.png)
+
 ## 核心能力
 
 - Agent Trace 采集与可观测性

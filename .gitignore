@@ -1,6 +1,7 @@
 # OS and editor files
 .DS_Store
 .idea/
+.claude/
 .vscode/*
 !.vscode/extensions.json
 *.swp

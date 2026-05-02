@@ -209,6 +209,21 @@ async def list_experiments(
 
 
 # ---------------------------------------------------------------------------
+# Get dataset baseline experiment
+# ---------------------------------------------------------------------------
+
+@router.get("/baselines", response_model=ApiResponse)
+async def get_baseline(
+    dataset_id: str = Query(...),
+    access: AccessContext = Depends(get_access_context),
+):
+    baseline = await experiment_repo.get_baseline(access.project_id, dataset_id)
+    if baseline is None:
+        return ApiResponse.success(data=None)
+    return ApiResponse.success(data=baseline)
+
+
+# ---------------------------------------------------------------------------
 # Get experiment with summary
 # ---------------------------------------------------------------------------
 
@@ -401,17 +416,6 @@ async def set_baseline(
     if experiment.status != ExperimentStatus.COMPLETED:
         return ApiResponse.error(message="Only completed experiments can be set as baseline", code=409)
     baseline = await experiment_repo.set_baseline(project_id, body.dataset_id, experiment_id)
-    return ApiResponse.success(data=baseline)
-
-
-@router.get("/baselines", response_model=ApiResponse)
-async def get_baseline(
-    dataset_id: str = Query(...),
-    access: AccessContext = Depends(get_access_context),
-):
-    baseline = await experiment_repo.get_baseline(access.project_id, dataset_id)
-    if baseline is None:
-        return ApiResponse.success(data=None)
     return ApiResponse.success(data=baseline)
 
 

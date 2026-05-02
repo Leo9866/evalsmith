@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	defaultProjectID = "proj_default"
-	sessionTTL       = 7 * 24 * time.Hour
+	defaultProjectID  = "proj_default"
+	sessionTTL        = 7 * 24 * time.Hour
+	sessionTouchEvery = 5 * time.Minute
 )
 
 var (
@@ -163,7 +164,7 @@ func (s *AuthService) ValidateSession(token string) (*model.UserSession, error) 
 		_ = s.sessionRepo.DeleteByHash(tokenHash)
 		return nil, ErrSessionExpired
 	}
-	_ = s.sessionRepo.Touch(session.ID)
+	s.touchSessionIfStale(session)
 	return session, nil
 }
 
@@ -180,6 +181,18 @@ func (s *AuthService) createSession(userID string) (string, error) {
 		return "", err
 	}
 	return rawToken, nil
+}
+
+func (s *AuthService) touchSessionIfStale(session *model.UserSession) {
+	if session == nil {
+		return
+	}
+	if session.LastSeen != nil && time.Since(*session.LastSeen) < sessionTouchEvery {
+		return
+	}
+	go func(sessionID string) {
+		_ = s.sessionRepo.Touch(sessionID)
+	}(session.ID)
 }
 
 func (s *AuthService) ensureBootstrapMembership(userID string) error {

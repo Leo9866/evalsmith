@@ -21,6 +21,7 @@ const (
 	ContextKeySessionToken = "session_token"
 	bearerPrefix           = "Bearer "
 	sessionCookieName      = "evalsmith_session"
+	sessionTouchEvery      = 5 * time.Minute
 )
 
 // AuthMiddleware validates API keys from the Authorization header.
@@ -148,9 +149,7 @@ func SessionMiddleware(sessionRepo *repository.SessionRepository, userRepo *repo
 			return
 		}
 
-		go func() {
-			_ = sessionRepo.Touch(session.ID)
-		}()
+		touchSessionIfStale(sessionRepo, session)
 
 		c.Set(ContextKeyUserID, user.ID)
 		c.Set(ContextKeySessionID, session.ID)
@@ -158,6 +157,18 @@ func SessionMiddleware(sessionRepo *repository.SessionRepository, userRepo *repo
 		c.Set("current_user", user)
 		c.Next()
 	}
+}
+
+func touchSessionIfStale(sessionRepo *repository.SessionRepository, session *model.UserSession) {
+	if session == nil {
+		return
+	}
+	if session.LastSeen != nil && time.Since(*session.LastSeen) < sessionTouchEvery {
+		return
+	}
+	go func(sessionID string) {
+		_ = sessionRepo.Touch(sessionID)
+	}(session.ID)
 }
 
 func GetUserIDFromContext(c *gin.Context) (string, bool) {

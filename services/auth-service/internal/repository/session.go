@@ -40,8 +40,8 @@ func (r *SessionRepository) EnsureSchema() error {
 func (r *SessionRepository) Create(userID, tokenHash string, expiresAt time.Time) (*model.UserSession, error) {
 	session := &model.UserSession{}
 	err := r.db.QueryRow(
-		`INSERT INTO user_sessions (user_id, token_hash, expires_at)
-		 VALUES ($1, $2, $3)
+		`INSERT INTO user_sessions (user_id, token_hash, expires_at, last_seen_at)
+		 VALUES ($1, $2, $3, now())
 		 RETURNING id, user_id, token_hash, expires_at, created_at, last_seen_at`,
 		userID, tokenHash, expiresAt,
 	).Scan(&session.ID, &session.UserID, &session.TokenHash, &session.ExpiresAt, &session.CreatedAt, &session.LastSeen)

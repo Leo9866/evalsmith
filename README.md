@@ -28,6 +28,12 @@ EvalSmith helps teams evaluate, observe, and improve AI agent applications. It p
 
 EvalSmith is intended for local trials, private deployments, and self-hosted evaluation workflows.
 
+## Product Tour
+
+The following animated PNG shows the main EvalSmith workflow across login, dashboard, traces, datasets, evaluators, prompts, experiments, annotation, monitoring, and settings.
+
+![EvalSmith UI tour](docs/assets/evalsmith-ui-tour.png)
+
 ## Features
 
 - Trace ingestion and agent observability

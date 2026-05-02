@@ -35,7 +35,7 @@ type accessResponse struct {
 }
 
 func AuthContextMiddleware(authServiceURL, internalToken string) gin.HandlerFunc {
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := &http.Client{Timeout: 15 * time.Second}
 	return func(c *gin.Context) {
 		projectID := strings.TrimSpace(c.GetHeader("X-Project-ID"))
 		if projectID == "" {
